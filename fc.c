@@ -34,7 +34,7 @@
     }
     void ConResPuts(FILE *fp, UINT nID)
     {
-        WCHAR sz[MAX_PATH];
+        WCHAR sz[MAX_PATH*5];
         LoadStringW(NULL, nID, sz, _countof(sz));
         fputws(sz, fp);
     }
