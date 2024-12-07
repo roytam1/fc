@@ -8,6 +8,10 @@
 
 #define IS_SPACE(ch) ((ch) == TEXT(' ') || (ch) == TEXT('\t'))
 
+#ifndef CSTR_EQUAL
+#define CSTR_EQUAL 2
+#endif
+
 #ifdef UNICODE
     #define NODE NODE_W
     #define PrintLine PrintLineW
