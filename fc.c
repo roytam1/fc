@@ -4,7 +4,12 @@
  * PURPOSE:     Comparing files
  * COPYRIGHT:   Copyright 2021 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
  */
+
 #include "fc.h"
+
+#if defined(_MSC_VER) && _MSC_VER < 1300
+#define _countof(a) (sizeof(a)/sizeof(*(a)))
+#endif
 
 #ifdef __REACTOS__
     #include <conutils.h>
@@ -40,7 +45,7 @@
         va_end(va);
     }
 #endif
-#include <strsafe.h>
+//#include <strsafe.h>
 #include <shlwapi.h>
 
 FCRET NoDifference(VOID)
@@ -151,12 +156,14 @@ static FCRET BinaryFileCompare(FILECOMPARE *pFC)
             ret = NoDifference();
             break;
         }
-        if (!GetFileSizeEx(hFile0, &cb0))
+        //if (!GetFileSizeEx(hFile0, &cb0))
+        if (!(cb0.LowPart=GetFileSize(hFile0, &(cb0.HighPart))))
         {
             ret = CannotRead(pFC->file[0]);
             break;
         }
-        if (!GetFileSizeEx(hFile1, &cb1))
+        //if (!GetFileSizeEx(hFile1, &cb1))
+        if (!(cb1.LowPart=GetFileSize(hFile1, &(cb1.HighPart))))
         {
             ret = CannotRead(pFC->file[1]);
             break;
@@ -258,12 +265,14 @@ static FCRET TextFileCompare(FILECOMPARE *pFC)
             ret = NoDifference();
             break;
         }
-        if (!GetFileSizeEx(hFile0, &cb0))
+        //if (!GetFileSizeEx(hFile0, &cb0))
+        if (!(cb0.LowPart=GetFileSize(hFile0, &(cb0.HighPart))))
         {
             ret = CannotRead(pFC->file[0]);
             break;
         }
-        if (!GetFileSizeEx(hFile1, &cb1))
+        //if (!GetFileSizeEx(hFile1, &cb1))
+        if (!(cb1.LowPart=GetFileSize(hFile1, &(cb1.HighPart))))
         {
             ret = CannotRead(pFC->file[1]);
             break;
@@ -378,7 +387,8 @@ static FCRET WildcardFileCompareOneSide(FILECOMPARE *pFC, BOOL bWildRight)
         ConResPrintf(StdErr, IDS_CANNOT_OPEN, pFC->file[bWildRight]);
         return FCRET_CANT_FIND;
     }
-    StringCbCopyW(szPath, sizeof(szPath), pFC->file[bWildRight]);
+    //StringCbCopyW(szPath, sizeof(szPath), pFC->file[bWildRight]);
+    wcscpy(szPath, pFC->file[bWildRight]);
 
     fc = *pFC;
     fc.file[!bWildRight] = pFC->file[!bWildRight];
@@ -429,8 +439,10 @@ static FCRET WildcardFileCompareBoth(FILECOMPARE *pFC)
         ConResPrintf(StdErr, IDS_CANNOT_OPEN, pFC->file[1]);
         return FCRET_CANT_FIND;
     }
-    StringCbCopyW(szPath0, sizeof(szPath0), pFC->file[0]);
-    StringCbCopyW(szPath1, sizeof(szPath1), pFC->file[1]);
+    //StringCbCopyW(szPath0, sizeof(szPath0), pFC->file[0]);
+    wcscpy(szPath0, pFC->file[0]);
+    //StringCbCopyW(szPath1, sizeof(szPath1), pFC->file[1]);
+    wcscpy(szPath1, pFC->file[1]);
 
     fc = *pFC;
     fc.file[0] = szPath0;
@@ -530,7 +542,7 @@ static FCRET WildcardFileCompare(FILECOMPARE *pFC)
 
 int wmain(int argc, WCHAR **argv)
 {
-    FILECOMPARE fc = { .dwFlags = 0, .n = 100, .nnnn = 2 };
+    FILECOMPARE fc = { 0, 100, 2 };
     PWCHAR endptr;
     INT i;
 

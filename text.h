@@ -535,7 +535,7 @@ FCRET TextCompare(FILECOMPARE *pFC, HANDLE *phMapping0, const LARGE_INTEGER *pcb
     struct list *ptr0, *ptr1, *save0, *save1, *next0, *next1;
     NODE* node0, * node1;
     BOOL fDifferent = FALSE;
-    LARGE_INTEGER ib0 = { .QuadPart = 0 }, ib1 = { .QuadPart = 0 };
+    LARGE_INTEGER ib0 = { 0 }, ib1 = { 0 };
     struct list *list0 = &pFC->list[0], *list1 = &pFC->list[1];
     list_init(list0);
     list_init(list1);
