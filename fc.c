@@ -227,7 +227,7 @@ static FCRET BinaryFileCompare(FILECOMPARE *pFC)
         else if (cb0.QuadPart > cb1.QuadPart)
             ret = LongerThan(pFC->file[0], pFC->file[1]);
         else if (fDifferent)
-            ret = Different(pFC->file[0], pFC->file[1]);
+            ret = FCRET_DIFFERENT;/*Different(pFC->file[0], pFC->file[1]);*/
         else
             ret = NoDifference();
     } while (0);
