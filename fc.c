@@ -5,7 +5,10 @@
  * COPYRIGHT:   Copyright 2021 Katayama Hirofumi MZ (katayama.hirofumi.mz@gmail.com)
  */
 
+#define _UNICODE
+#define UNICODE
 #include "fc.h"
+#include <tchar.h>
 
 #if defined(_MSC_VER) && _MSC_VER < 1300
 #define _countof(a) (sizeof(a)/sizeof(*(a)))
@@ -46,7 +49,477 @@
     }
 #endif
 //#include <strsafe.h>
+#ifdef USE_SHLWAPI
 #include <shlwapi.h>
+#define CommandLineToArgvT CommandLineToArgvW
+#else
+LPTSTR *WINAPI CommandLineToArgvT(LPCTSTR lpCmdLine, int *lpArgc)
+{
+	HGLOBAL hargv;
+	LPTSTR *argv, lpSrc, lpDest, lpArg;
+	int argc, nBSlash;
+	BOOL bInQuotes;
+
+	// If null was passed in for lpCmdLine, there are no arguments
+	if (!lpCmdLine) {
+		if (lpArgc)
+			*lpArgc = 0;
+		return 0;
+	}
+
+	lpSrc = (LPTSTR)lpCmdLine;
+	// Skip spaces at beginning
+	while (*lpSrc == _T(' ') || *lpSrc == _T('\t'))
+		lpSrc++;
+
+	// If command-line starts with null, there are no arguments
+	if (*lpSrc == 0) {
+		if (lpArgc)
+			*lpArgc = 0;
+		return 0;
+	}
+
+	lpArg = lpSrc;
+	argc = 0;
+	nBSlash = 0;
+	bInQuotes = FALSE;
+
+	// Count the number of arguments
+	while (1) {
+		if (*lpSrc == 0 || ((*lpSrc == _T(' ') || *lpSrc == _T('\t')) && !bInQuotes)) {
+			// Whitespace not enclosed in quotes signals the start of another argument
+			argc++;
+
+			// Skip whitespace between arguments
+			while (*lpSrc == _T(' ') || *lpSrc == _T('\t'))
+				lpSrc++;
+			if (*lpSrc == 0)
+				break;
+			nBSlash = 0;
+			continue;
+		}
+		else if (*lpSrc == _T('\\')) {
+			// Count consecutive backslashes
+			nBSlash++;
+		}
+		else if (*lpSrc == _T('\"') && !(nBSlash & 1)) {
+			// Open or close quotes
+			bInQuotes = !bInQuotes;
+			nBSlash = 0;
+		}
+		else {
+			// Some other character
+			nBSlash = 0;
+		}
+		lpSrc++;
+	}
+
+	// Allocate space the same way as CommandLineToArgvW for compatibility
+	hargv = GlobalAlloc(0, argc * sizeof(LPTSTR) + (_tcslen(lpArg) + 1) * sizeof(TCHAR));
+	argv = (LPTSTR *)GlobalLock(hargv);
+
+	if (!argv) {
+		// Memory allocation failed
+		if (lpArgc)
+			*lpArgc = 0;
+		return 0;
+	}
+
+	lpSrc = lpArg;
+	lpDest = lpArg = (LPTSTR)(argv + argc);
+	argc = 0;
+	nBSlash = 0;
+	bInQuotes = FALSE;
+
+	// Fill the argument array
+	while (1) {
+		if (*lpSrc == 0 || ((*lpSrc == _T(' ') || *lpSrc == _T('\t')) && !bInQuotes)) {
+			// Whitespace not enclosed in quotes signals the start of another argument
+			// Null-terminate argument
+			*lpDest++ = 0;
+			argv[argc++] = lpArg;
+
+			// Skip whitespace between arguments
+			while (*lpSrc == _T(' ') || *lpSrc == _T('\t'))
+				lpSrc++;
+			if (*lpSrc == 0)
+				break;
+			lpArg = lpDest;
+			nBSlash = 0;
+			continue;
+		}
+		else if (*lpSrc == _T('\\')) {
+			*lpDest++ = _T('\\');
+			lpSrc++;
+
+			// Count consecutive backslashes
+			nBSlash++;
+		}
+		else if (*lpSrc == _T('\"')) {
+			if (!(nBSlash & 1)) {
+				// If an even number of backslashes are before the quotes,
+				// the quotes don't go in the output
+				lpDest -= nBSlash / 2;
+				bInQuotes = !bInQuotes;
+			}
+			else {
+				// If an odd number of backslashes are before the quotes,
+				// output a quote
+				lpDest -= (nBSlash + 1) / 2;
+				*lpDest++ = _T('\"');
+			}
+			lpSrc++;
+			nBSlash = 0;
+		}
+		else {
+			// Copy other characters
+			*lpDest++ = *lpSrc++;
+			nBSlash = 0;
+		}
+	}
+
+	if (lpArgc)
+		*lpArgc = argc;
+	return argv;
+}
+
+BOOL WINAPI PathIsUNCW(const WCHAR *path)
+{
+    return path && (path[0] == '\\') && (path[1] == '\\');
+}
+
+BOOL WINAPI PathIsRelativeW(const WCHAR *path)
+{
+    if (!path || !*path)
+        return TRUE;
+
+    return !(*path == '\\' || (*path && path[1] == ':'));
+}
+
+BOOL WINAPI PathIsUNCServerShareW(const WCHAR *path)
+{
+    BOOL seen_slash = FALSE;
+
+    if (path && *path++ == '\\' && *path++ == '\\')
+    {
+        while (*path)
+        {
+            if (*path == '\\')
+            {
+                if (seen_slash)
+                    return FALSE;
+                seen_slash = TRUE;
+            }
+
+            path++;
+        }
+    }
+
+    return seen_slash;
+}
+
+BOOL WINAPI PathCanonicalizeW(WCHAR *buffer, const WCHAR *path)
+{
+    const WCHAR *src = path;
+    WCHAR *dst = buffer;
+
+    if (dst)
+        *dst = '\0';
+
+    if (!dst || !path)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (!*path)
+    {
+        *buffer++ = '\\';
+        *buffer = '\0';
+        return TRUE;
+    }
+
+    /* Copy path root */
+    if (*src == '\\')
+    {
+        *dst++ = *src++;
+    }
+    else if (*src && src[1] == ':')
+    {
+        /* X:\ */
+        *dst++ = *src++;
+        *dst++ = *src++;
+        if (*src == '\\')
+            *dst++ = *src++;
+    }
+
+    /* Canonicalize the rest of the path */
+    while (*src)
+    {
+        if (*src == '.')
+        {
+            if (src[1] == '\\' && (src == path || src[-1] == '\\' || src[-1] == ':'))
+            {
+                src += 2; /* Skip .\ */
+            }
+            else if (src[1] == '.' && dst != buffer && dst[-1] == '\\')
+            {
+                /* \.. backs up a directory, over the root if it has no \ following X:.
+                 * .. is ignored if it would remove a UNC server name or initial \\
+                 */
+                if (dst != buffer)
+                {
+                    *dst = '\0'; /* Allow PathIsUNCServerShareA test on lpszBuf */
+                    if (dst > buffer + 1 && dst[-1] == '\\' && (dst[-2] != '\\' || dst > buffer + 2))
+                    {
+                        if (dst[-2] == ':' && (dst > buffer + 3 || dst[-3] == ':'))
+                        {
+                            dst -= 2;
+                            while (dst > buffer && *dst != '\\')
+                                dst--;
+                            if (*dst == '\\')
+                                dst++; /* Reset to last '\' */
+                            else
+                                dst = buffer; /* Start path again from new root */
+                        }
+                        else if (dst[-2] != ':' && !PathIsUNCServerShareW(buffer))
+                            dst -= 2;
+                    }
+                    while (dst > buffer && *dst != '\\')
+                        dst--;
+                    if (dst == buffer)
+                    {
+                        *dst++ = '\\';
+                        src++;
+                    }
+                }
+                src += 2; /* Skip .. in src path */
+            }
+            else
+                *dst++ = *src++;
+        }
+        else
+            *dst++ = *src++;
+    }
+
+    /* Append \ to naked drive specs */
+    if (dst - buffer == 2 && dst[-1] == ':')
+        *dst++ = '\\';
+    *dst++ = '\0';
+    return TRUE;
+}
+
+LPWSTR WINAPI PathAddBackslashW(WCHAR *path)
+{
+    unsigned int len;
+
+    if (!path || (len = lstrlenW(path)) >= MAX_PATH)
+        return NULL;
+
+    if (len)
+    {
+        path += len;
+        if (path[-1] != '\\')
+        {
+            *path++ = '\\';
+            *path = '\0';
+        }
+    }
+
+    return path;
+}
+
+BOOL WINAPI PathIsRootW(const WCHAR *path)
+{
+    if (!path || !*path)
+        return FALSE;
+
+    if (*path == '\\')
+    {
+        if (!path[1])
+            return TRUE; /* \ */
+        else if (path[1] == '\\')
+        {
+            BOOL seen_slash = FALSE;
+
+            path += 2;
+            /* Check for UNC root path */
+            while (*path)
+            {
+                if (*path == '\\')
+                {
+                    if (seen_slash)
+                        return FALSE;
+                    seen_slash = TRUE;
+                }
+                path++;
+            }
+
+            return TRUE;
+        }
+    }
+    else if (path[1] == ':' && path[2] == '\\' && path[3] == '\0')
+        return TRUE; /* X:\ */
+
+    return FALSE;
+}
+
+BOOL WINAPI PathRemoveFileSpecW(WCHAR *path)
+{
+    WCHAR *filespec = path;
+    BOOL modified = FALSE;
+
+    if (!path)
+        return FALSE;
+
+    /* Skip directory or UNC path */
+    if (*path == '\\')
+        filespec = ++path;
+    if (*path == '\\')
+        filespec = ++path;
+
+    while (*path)
+    {
+        if (*path == '\\')
+            filespec = path; /* Skip dir */
+        else if (*path == ':')
+        {
+            filespec = ++path; /* Skip drive */
+            if (*path == '\\')
+                filespec++;
+        }
+
+        path++;
+    }
+
+    if (*filespec)
+    {
+        *filespec = '\0';
+        modified = TRUE;
+    }
+
+    return modified;
+}
+
+BOOL WINAPI PathStripToRootW(WCHAR *path)
+{
+    if (!path)
+        return FALSE;
+
+    while (!PathIsRootW(path))
+        if (!PathRemoveFileSpecW(path))
+            return FALSE;
+
+    return TRUE;
+}
+
+WCHAR * WINAPI PathCombineW(WCHAR *dst, const WCHAR *dir, const WCHAR *file)
+{
+    BOOL use_both = FALSE, strip = FALSE;
+    WCHAR tmp[MAX_PATH];
+
+    /* Invalid parameters */
+    if (!dst)
+        return NULL;
+
+    if (!dir && !file)
+    {
+        dst[0] = 0;
+        return NULL;
+    }
+
+    if ((!file || !*file) && dir)
+    {
+        /* Use dir only */
+        lstrcpynW(tmp, dir, _countof(tmp));
+    }
+    else if (!dir || !*dir || !PathIsRelativeW(file))
+    {
+        if (!dir || !*dir || *file != '\\' || PathIsUNCW(file))
+        {
+            /* Use file only */
+            lstrcpynW(tmp, file, _countof(tmp));
+        }
+        else
+        {
+            use_both = TRUE;
+            strip = TRUE;
+        }
+    }
+    else
+        use_both = TRUE;
+
+    if (use_both)
+    {
+        lstrcpynW(tmp, dir, _countof(tmp));
+        if (strip)
+        {
+            PathStripToRootW(tmp);
+            file++; /* Skip '\' */
+        }
+
+        if (!PathAddBackslashW(tmp) || lstrlenW(tmp) + lstrlenW(file) >= MAX_PATH)
+        {
+            dst[0] = 0;
+            return NULL;
+        }
+
+        lstrcatW(tmp, file);
+    }
+
+    PathCanonicalizeW(dst, tmp);
+    return dst;
+}
+
+BOOL WINAPI PathAppendW(WCHAR *path, const WCHAR *append)
+{
+    if (path && append)
+    {
+        if (!PathIsUNCW(append))
+            while (*append == '\\')
+                append++;
+
+        if (PathCombineW(path, path, append))
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+LPWSTR WINAPI PathFindExtensionW(const WCHAR *path)
+{
+    const WCHAR *lastpoint = NULL;
+
+    if (path)
+    {
+        while (*path)
+        {
+            if (*path == '\\' || *path == ' ')
+                lastpoint = NULL;
+            else if (*path == '.')
+                lastpoint = path;
+            path++;
+        }
+    }
+
+    return (LPWSTR)(lastpoint ? lastpoint : path);
+}
+
+BOOL WINAPI PathAddExtensionW(WCHAR *path, const WCHAR *ext)
+{
+    unsigned int len;
+
+    if (!path || !ext || *(PathFindExtensionW(path)))
+        return FALSE;
+
+    len = lstrlenW(path);
+    if (len + lstrlenW(ext) >= MAX_PATH)
+        return FALSE;
+
+    lstrcpyW(path + len, ext);
+    return TRUE;
+}
+#endif
 
 FCRET NoDifference(VOID)
 {
@@ -631,7 +1104,7 @@ int wmain(int argc, WCHAR **argv)
 int main(int argc, char **argv)
 {
     INT my_argc;
-    LPWSTR *my_argv = CommandLineToArgvW(GetCommandLineW(), &my_argc);
+    LPWSTR *my_argv = CommandLineToArgvT(GetCommandLineW(), &my_argc);
     INT ret = wmain(my_argc, my_argv);
     LocalFree(my_argv);
     return ret;
