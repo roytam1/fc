@@ -611,6 +611,7 @@ static FCRET BinaryFileCompare(FILECOMPARE *pFC)
     LARGE_INTEGER ib, cb0, cb1, cbCommon;
     DWORD cbView, ibView;
     BOOL fDifferent = FALSE;
+    DWORD dwLastError = 0;
 
     hFile0 = DoOpenFileForInput(pFC->file[0]);
     if (hFile0 == INVALID_HANDLE_VALUE)
@@ -630,13 +631,21 @@ static FCRET BinaryFileCompare(FILECOMPARE *pFC)
             break;
         }
         //if (!GetFileSizeEx(hFile0, &cb0))
-        if (!(cb0.LowPart=GetFileSize(hFile0, &(cb0.HighPart))))
+        cb0.LowPart = GetFileSize(hFile0, &(cb0.HighPart));
+        if (cb0.LowPart == INVALID_FILE_SIZE)
+            dwLastError = GetLastError();
+        else dwLastError = 0;
+        if (dwLastError != NO_ERROR)
         {
             ret = CannotRead(pFC->file[0]);
             break;
         }
         //if (!GetFileSizeEx(hFile1, &cb1))
-        if (!(cb1.LowPart=GetFileSize(hFile1, &(cb1.HighPart))))
+        cb1.LowPart = GetFileSize(hFile1, &(cb1.HighPart));
+        if (cb1.LowPart == INVALID_FILE_SIZE)
+            dwLastError = GetLastError();
+        else dwLastError = 0;
+        if (dwLastError != NO_ERROR)
         {
             ret = CannotRead(pFC->file[1]);
             break;
@@ -720,6 +729,7 @@ static FCRET TextFileCompare(FILECOMPARE *pFC)
     HANDLE hFile0, hFile1, hMapping0 = NULL, hMapping1 = NULL;
     LARGE_INTEGER cb0, cb1;
     BOOL fUnicode = !!(pFC->dwFlags & FLAG_U);
+    DWORD dwLastError = 0;
 
     hFile0 = DoOpenFileForInput(pFC->file[0]);
     if (hFile0 == INVALID_HANDLE_VALUE)
@@ -739,17 +749,26 @@ static FCRET TextFileCompare(FILECOMPARE *pFC)
             break;
         }
         //if (!GetFileSizeEx(hFile0, &cb0))
-        if (!(cb0.LowPart=GetFileSize(hFile0, &(cb0.HighPart))))
+        cb0.LowPart = GetFileSize(hFile0, &(cb0.HighPart));
+        if (cb0.LowPart == INVALID_FILE_SIZE)
+            dwLastError = GetLastError();
+        else dwLastError = 0;
+        if (dwLastError != NO_ERROR)
         {
             ret = CannotRead(pFC->file[0]);
             break;
         }
         //if (!GetFileSizeEx(hFile1, &cb1))
-        if (!(cb1.LowPart=GetFileSize(hFile1, &(cb1.HighPart))))
+        cb1.LowPart = GetFileSize(hFile1, &(cb1.HighPart));
+        if (cb1.LowPart == INVALID_FILE_SIZE)
+            dwLastError = GetLastError();
+        else dwLastError = 0;
+        if (dwLastError != NO_ERROR)
         {
             ret = CannotRead(pFC->file[1]);
             break;
         }
+
         if (cb0.QuadPart == 0 && cb1.QuadPart == 0)
         {
             ret = NoDifference();
